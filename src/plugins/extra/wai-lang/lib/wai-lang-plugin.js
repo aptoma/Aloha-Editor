@@ -39,15 +39,18 @@ define([
 	/**
 	 * Ui Attribute Field singleton.
 	 *
+	 * Needs to be defined in prepareUi(), because of a problem with the
+	 * stateful initialization of jQuery UI autocomplete implementation for
+	 * Aloha Editor.
+	 *
 	 * @type {AttributeField}
 	 */
-	var FIELD = attributeField({
-		name: 'wailangfield',
-		width: 320,
-		valueField: 'id',
-		minChars: 1,
-		scope: 'wai-lang'
-	});
+	var FIELD = null;
+
+	/**
+	 * UI Button to remove wai-lang
+	 */
+	var removeButton = null;
 
 	/**
 	 * Sets focus on the given field.
@@ -55,9 +58,13 @@ define([
 	 * @param {AttributeField} field
 	 */
 	function focusOn(field) {
-		field.foreground();
-		field.focus();
-		Scopes.setScope('wai-lang');
+		if (field) {
+			field.foreground();
+			field.focus();
+		}
+		// show the field and remove button
+		FIELD.show();
+		removeButton.show();
 	}
 
 	/**
@@ -180,9 +187,19 @@ define([
 	 * Initialize the buttons:
 	 * Places the Wai-Lang UI buttons into the floating menu.
 	 *
+	 * Initializes `FIELD`.
+	 *
 	 * @param {Plugin} plugin Wai-lang plugin instance
 	 */
 	function prepareUi(plugin) {
+		FIELD = attributeField({
+			name: 'wailangfield',
+			width: 320,
+			valueField: 'id',
+			minChars: 1,
+			scope: 'Aloha.continuoustext'
+		});
+
 		plugin._wailangButton = Ui.adopt('wailang', ToggleButton, {
 			tooltip: i18n.t('button.add-wai-lang.tooltip'),
 			icon: 'aloha-icon aloha-icon-wai-lang',
@@ -190,16 +207,14 @@ define([
 			click: toggleAnnotation
 		});
 
-		Ui.adopt('removewailang', Button, {
+		removeButton = Ui.adopt('removewailang', Button, {
 			tooltip: i18n.t('button.add-wai-lang-remove.tooltip'),
 			icon: 'aloha-icon aloha-icon-wai-lang-remove',
-			scope: 'wai-lang',
+			scope: 'Aloha.continuoustext',
 			click: function onButtonClick() {
 				removeMarkup(Selection.getRangeObject());
 			}
 		});
-
-		Scopes.createScope('wai-lang', 'Aloha.continuoustext');
 
 		FIELD.setTemplate(plugin.flags
 				? '<div class="aloha-wai-lang-img-item">' +
@@ -268,6 +283,8 @@ define([
 	/**
 	 * Registers event handlers for the given plugin instance.
 	 *
+	 * Assumes `FIELD` is initialized.
+	 *
 	 * @param {Plugin} plugin Instance of wai-lang plugin.
 	 */
 	function subscribeEvents(plugin) {
@@ -287,10 +304,21 @@ define([
 				if (markup) {
 					plugin._wailangButton.setState(true);
 					FIELD.setTargetObject(markup, 'lang');
-					Scopes.setScope('wai-lang');
+
+					// show the field and remove button
+					FIELD.show();
+					removeButton.show();
+
+					Scopes.enterScope(plugin.name, 'wai-lang');
 				} else {
 					plugin._wailangButton.setState(false);
 					FIELD.setTargetObject(null);
+
+					// hide the field and remove button
+					FIELD.hide();
+					removeButton.hide();
+
+					Scopes.leaveScope(plugin.name, 'wai-lang', true);
 				}
 			});
 
