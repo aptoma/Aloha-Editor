@@ -113,11 +113,14 @@ define(function (require) {
 			});
 
 			Aloha.bind('aloha-smart-content-changed', function (event, obj) {
-				plugin.stack.execute(new EditCommand(
-					obj.editable,
-					obj.editable.undoSnapshotContent,
-					obj.editable.undoSnapshotBookmark
-				));
+				// only push an EditCommand if something actually changed.
+				if (obj.editable.undoSnapshotContent !== obj.editable.obj.html()) {
+					plugin.stack.execute(new EditCommand(
+						obj.editable,
+						obj.editable.undoSnapshotContent,
+						obj.editable.undoSnapshotBookmark
+					));
+				}
 				plugin.snaphotInProgress = false;
 			});
 
