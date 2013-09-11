@@ -64,20 +64,22 @@ define(function (require) {
 	 * @type Object
 	 */
 	var EditCommand = Undo.Command.extend({
-		constructor: function (editable, content, bookmark) {
+		constructor: function (editable, contentBefore, contentAfter, bookmarkBefore, bookmarkAfter) {
 			this.editable = editable;
-			this.content = content;
-			this.bookmark = bookmark;
+			this.contentBefore = contentBefore;
+			this.contentAfter = contentAfter;
+			this.bookmarkBefore = bookmarkBefore;
+			this.bookmarkAfter = bookmarkAfter;
 		},
 
 		execute: function () {},
 
 		undo: function () {
-			plugin.setContent(this.editable, this.content, this.bookmark);
+			plugin.setContent(this.editable, this.contentBefore, this.bookmarkBefore);
 		},
 
 		redo: function () {
-			plugin.setContent(this.editable, this.content, this.bookmark);
+			plugin.setContent(this.editable, this.contentAfter, this.bookmarkAfter);
 		},
 	});
 
@@ -86,78 +88,105 @@ define(function (require) {
 	 */
 	var plugin = Plugin.create('undo', {
 
-		undoInProgress: false,
-		snaphotInProgress: false,
-
 		/**
 		 * Initialize the plugin and set initialize flag on true.
 		 */
 		init: function () {
 			plugin.stack = new Undo.Stack();
-
-			plugin.stack.changed = function () {
-				plugin.updateButtons();
-			};
-
+			plugin.stack.changed = plugin.onStackChange;
+			Aloha.bind('aloha-editable-created', plugin.onEditableCreated);
+			Aloha.bind('aloha-editable-activated', plugin.onEditableActivated);
+			Aloha.bind('aloha-command-will-execute', plugin.onCommandWillExecute);
+			Aloha.bind('aloha-command-executed', plugin.onCommandExecuted, this);
 			plugin.createButtons();
+		},
 
-			Aloha.bind('aloha-editable-created', function (e, editable) {
-				editable.obj.bind('keydown', 'ctrl+z meta+z ctrl+shift+z meta+shift+z', function (event) {
-					event.preventDefault();
-					if (event.shiftKey) {
-						plugin.redo();
-					} else {
-						plugin.undo();
-					}
-				});
-			});
+		/**
+		 * Called when the undo stacked hs been changed.
+		 */
+		onStackChange: function () {
+			plugin.updateButtons();
+		},
 
-			Aloha.bind('aloha-smart-content-changed', function (event, obj) {
-				// only push an EditCommand if something actually changed.
-				if (obj.editable.undoSnapshotContent !== obj.editable.obj.html()) {
-					plugin.stack.execute(new EditCommand(
-						obj.editable,
-						obj.editable.undoSnapshotContent,
-						obj.editable.undoSnapshotBookmark
-					));
+		/**
+		 * Called after a new editable has been created.
+		 * @param {jQuery.Event} e
+		 * @param {Aloha.Editable} editable
+		 */
+		onEditableCreated: function (e, editable) {
+			editable.obj.bind('keydown', plugin.onKeyDown);
+			editable.obj.bind('keyup', plugin.onKeyUp);
+			editable.obj.bind('keydown', 'ctrl+z meta+z ctrl+shift+z meta+shift+z', function (event) {
+				event.preventDefault();
+				if (event.shiftKey) {
+					plugin.redo();
+				} else {
+					plugin.undo();
 				}
-				plugin.snaphotInProgress = false;
-			});
-
-			Aloha.bind('aloha-command-will-execute', function (event, obj) {
-				if (!plugin.snaphotInProgress) {
-					plugin.takeSnapshot(obj.editable);
-				}
-				plugin.snaphotInProgress = true;
-			});
-
-			Aloha.bind('aloha-editable-activated', function () {
-				plugin.undoInProgress = false;
-				plugin.snapshotInProgress = false;
-				plugin.updateButtons();
-
-				// reset undo stack so history is restricted to one editable (and prevent it to grow forever)
-				plugin.stack.commands = [];
-				plugin.stack.stackPosition = plugin.stack.savePosition = -1;
 			});
 		},
 
 		/**
-		 * Take a snapshot of the current editable content.
-		 * @param {Aloha.Editable} editable
+		 * Called on key down.
 		 */
-		takeSnapshot: function (editable) {
-			if (plugin.undoInProgress) {
+		onKeyDown: function () {
+			plugin.keyReleased = false;
+		},
+
+		/**
+		 * Called on key up.
+		 */
+		onKeyUp: function () {
+			plugin.keyReleased = true;
+		},
+
+		/**
+		 * Called when an editable has been activated.
+		 */
+		onEditableActivated: function () {
+			plugin.updateButtons();
+
+			// reset undo stack so history is restricted to one editable (and prevent it to grow forever)
+			plugin.stack.commands = [];
+			plugin.stack.stackPosition = plugin.stack.savePosition = -1;
+		},
+
+		/**
+		 * Called before a command will be executed.
+		 * @param {jQuery.Event} e
+		 * @param {Object} obj
+		 */
+		onCommandWillExecute: function (e, obj) {
+			var editable = Aloha.getActiveEditable();
+
+			if (plugin.isUndoableCommand(obj.commandId)) {
+				editable.undoLastSelection = rangy.getSelection().getBookmark(editable.obj[0]);
+				editable.undoLastContent = editable.obj.html();
+			}
+		},
+
+		/**
+		 * Called after a command has been executed.
+		 * @param {jQuery.Event} e
+		 * @param {String} commandId
+		 */
+		onCommandExecuted: function (event, commandId) {
+			// wait with adding stuff to the undo stack until key has been released
+			if (!plugin.keyReleased) {
 				return;
 			}
 
-			if (typeof editable !== 'object') {
-				editable = Aloha.getActiveEditable();
-			}
+			var editable = Aloha.getActiveEditable();
 
-			// Store content and bookmark which will be used on the next snapshot.
-			editable.undoSnapshotContent = editable.obj.html();
-			editable.undoSnapshotBookmark = rangy.getSelection().getBookmark(editable.obj[0]);
+			if (plugin.isUndoableCommand(commandId)) {
+				plugin.stack.execute(new EditCommand(
+					editable,
+					editable.undoLastContent,
+					editable.obj.html(),
+					editable.undoLastSelection,
+					rangy.getSelection().getBookmark(editable.obj[0])
+				));
+			}
 		},
 
 		/**
@@ -172,7 +201,6 @@ define(function (require) {
 				content: content
 			};
 
-			plugin.undoInProgress = true;
 			Aloha.trigger('aloha-undo-content-will-change', data);
 
 			editable.obj.html(content);
@@ -182,7 +210,15 @@ define(function (require) {
 			rangy.getSelection().moveToBookmark(bookmark);
 
 			Aloha.trigger('aloha-undo-content-changed', data);
-			plugin.undoInProgress = false;
+		},
+
+		/**
+		 * Check if the given command should produce an entry in the undo stack.
+		 * @param  {String} commandId
+		 * @return {Boolean}
+		 */
+		isUndoableCommand: function (commandId) {
+			return (commandId === 'delete' || commandId === 'insertHTML');
 		},
 
 		/**
