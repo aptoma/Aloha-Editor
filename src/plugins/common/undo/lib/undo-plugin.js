@@ -130,8 +130,19 @@ define(function (require) {
 		/**
 		 * Called on key down.
 		 */
-		onKeyDown: function () {
+		onKeyDown: function (e) {
 			plugin.keyReleased = false;
+
+			// ignore ctrl, cmd/meta, control keys, and arrow keys
+			if (e.ctrlKey || e.metaKey || e.keyCode < 32 || (e.keyCode > 37 && e.keyCode < 40)) {
+				return;
+			}
+
+			// is user trying to overwrite the selection, handle it as a deletion and make a snapshot
+			if (!rangy.getSelection().isCollapsed) {
+				plugin.preSnapshot();
+				plugin.selectionOverwrite = true;
+			}
 		},
 
 		/**
@@ -139,6 +150,10 @@ define(function (require) {
 		 */
 		onKeyUp: function () {
 			plugin.keyReleased = true;
+			if (plugin.selectionOverwrite) {
+				plugin.postSnapshot();
+			}
+			plugin.selectionOverwrite = false;
 		},
 
 		/**
@@ -163,11 +178,8 @@ define(function (require) {
 		 * @param {Object} obj
 		 */
 		onCommandWillExecute: function (e, obj) {
-			var editable = Aloha.getActiveEditable();
-
 			if (plugin.isUndoableCommand(obj.commandId)) {
-				editable.undoLastSelection = rangy.getSelection().getBookmark(editable.obj[0]);
-				editable.undoLastContent = editable.obj.html();
+				plugin.preSnapshot();
 			}
 		},
 
@@ -177,6 +189,25 @@ define(function (require) {
 		 * @param {String} commandId
 		 */
 		onCommandExecuted: function (event, commandId) {
+			if (plugin.isUndoableCommand(commandId)) {
+				plugin.postSnapshot();
+			}
+		},
+
+		/**
+		 * Make a snapshot and preserve selection before the content changes.
+		 */
+		preSnapshot: function () {
+			var editable = Aloha.getActiveEditable();
+
+			editable.undoLastSelection = rangy.getSelection().getBookmark(editable.obj[0]);
+			editable.undoLastContent = editable.obj.html();
+		},
+
+		/**
+		 * Make a snapshot and preserve selection after the content changes.
+		 */
+		postSnapshot: function () {
 			// wait with adding stuff to the undo stack until key has been released
 			if (!plugin.keyReleased) {
 				return;
@@ -184,15 +215,13 @@ define(function (require) {
 
 			var editable = Aloha.getActiveEditable();
 
-			if (plugin.isUndoableCommand(commandId)) {
-				plugin.stack.execute(new EditCommand(
-					editable,
-					editable.undoLastContent,
-					editable.obj.html(),
-					editable.undoLastSelection,
-					rangy.getSelection().getBookmark(editable.obj[0])
-				));
-			}
+			plugin.stack.execute(new EditCommand(
+				editable,
+				editable.undoLastContent,
+				editable.obj.html(),
+				editable.undoLastSelection,
+				rangy.getSelection().getBookmark(editable.obj[0])
+			));
 		},
 
 		/**
