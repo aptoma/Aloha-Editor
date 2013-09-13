@@ -134,7 +134,7 @@ define(function (require) {
 			plugin.keyReleased = false;
 
 			// ignore ctrl, cmd/meta, control keys, and arrow keys
-			if (e.ctrlKey || e.metaKey || e.keyCode < 32 || (e.keyCode > 37 && e.keyCode < 40)) {
+			if (e.ctrlKey || e.metaKey || e.keyCode < 32 || (e.keyCode >= 37 && e.keyCode <= 40)) {
 				return;
 			}
 
