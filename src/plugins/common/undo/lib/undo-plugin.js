@@ -96,6 +96,7 @@ define(function (require) {
 			plugin.stack.changed = plugin.onStackChange;
 			Aloha.bind('aloha-editable-created', plugin.onEditableCreated);
 			Aloha.bind('aloha-editable-activated', plugin.onEditableActivated);
+			Aloha.bind('aloha-editable-deactivated', plugin.onEditableDeactivated);
 			Aloha.bind('aloha-command-will-execute', plugin.onCommandWillExecute);
 			Aloha.bind('aloha-command-executed', plugin.onCommandExecuted, this);
 			plugin.createButtons();
@@ -145,8 +146,13 @@ define(function (require) {
 		 */
 		onEditableActivated: function () {
 			plugin.updateButtons();
+		},
 
-			// reset undo stack so history is restricted to one editable (and prevent it to grow forever)
+		/**
+		 * Called when an editable has been deactivated.
+		 */
+		onEditableDeactivated: function () {
+			// clean undo stack so history is restricted to one editable (and prevent it to grow forever)
 			plugin.stack.commands = [];
 			plugin.stack.stackPosition = plugin.stack.savePosition = -1;
 		},
